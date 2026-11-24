@@ -1,0 +1,27 @@
+# The keeper's eval environment: what `generate_vllm.py` needs to run vLLM in the keeper's inference container: the
+# same engine, transformers and torch versions as the text pack's eval lock (vLLM 0.31.0 with its own Pillow). Whether
+# this engine loads Qwen3.5-0.8B with images is checked by the probe in the pack's README before any sealed run. It is
+# a lock input, not a dependency of the pack: `uv lock` makes eval/uv.lock, and
+#
+#   uv export --format requirements-txt --no-emit-project --no-dev --no-header -o eval-requirements.txt
+#
+# (run in this directory, then move the file one level up) makes `../eval-requirements.txt`, the file that
+# `gatedtrain setup host --eval-requirements` takes. Every requirement is pinned with hashes. No package here is
+# sdist-only: the host script installs binary wheels only.
+[project]
+name = "gatedtrain-pack-vlm-clevr-eval"
+version = "0.1.0"
+license = "Apache-2.0"
+requires-python = "==3.12.*"
+dependencies = [
+    "vllm==0.31.0",
+    "transformers==5.17.0",
+    "torch==2.13.0",
+]
+
+[tool.uv]
+package = false
+# Linux x86_64 only, as the recipe's runtime lock; PyPI is the only index (as that lock).
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+# Every transitive dependency resolves to a release at least two weeks old (the recipe lock's cutoff).
+exclude-newer = "2026-10-28T00:00:00Z"

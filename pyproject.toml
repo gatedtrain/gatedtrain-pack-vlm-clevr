@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gatedtrain-pack-vlm-clevr"
+version = "0.1.0"
+description = "CLEVR vision-language scenario pack for the gatedtrain post-training framework"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"]
+dependencies = ["gatedtrain>=0.5,<0.6"]
+
+[project.optional-dependencies]
+convert = ["pillow>=10"]
+
+[project.scripts]
+gatedtrain-pack-vlm-clevr-data = "gatedtrain_pack_vlm_clevr.data:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+gatedtrain_pack_vlm_clevr = ["generate_vllm.py", "pipeline.yaml", "eval-requirements.txt", "runtime/*", "eval/*"]
+
+[project.entry-points."gatedtrain.adapters"]
+vlm-clevr-grpo = "gatedtrain_pack_vlm_clevr.adapter:PLUGIN"
+
+[project.entry-points."gatedtrain.stages"]
+clevr_profile_data = "gatedtrain_pack_vlm_clevr.stages:ProfileData"
+clevr_choose_task_and_base = "gatedtrain_pack_vlm_clevr.stages:ChooseTaskAndBase"
+clevr_build_train_set = "gatedtrain_pack_vlm_clevr.stages:BuildTrainSet"
+clevr_write_recipe = "gatedtrain_pack_vlm_clevr.stages:WriteRecipe"
+clevr_smoke = "gatedtrain_pack_vlm_clevr.stages:Smoke"
+clevr_train = "gatedtrain_pack_vlm_clevr.stages:Train"
+
+[project.entry-points."gatedtrain.scenarios"]
+vlm-clevr = "gatedtrain_pack_vlm_clevr.scenario:SCENARIO"

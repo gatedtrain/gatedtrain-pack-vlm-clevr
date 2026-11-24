@@ -1,0 +1,47 @@
+# The CLEVR pack's pipeline (scenario `vlm-clevr`): a keeper project only, since the models are evaluated by the batch
+# generator `vlm_clevr_vllm` in the keeper's inference container. The data rows are `{"input": {"question", "image"},
+# "label"}` with the image inline (convert CLEVR-style data with `gatedtrain-pack-vlm-clevr-data`).
+#
+# Two params have no usable default and are null here; a stage refuses to run until they are set. Copy this file, set
+# them, and pass the copy to `gatedtrain project create --pipeline <copy> --keeper <socket>`:
+#
+#   choose_task_and_base.base_model_dir  the absolute path of the Qwen/Qwen3.5-0.8B model directory downloaded on the
+#                                        host at the pinned commit (e.g. /srv/gatedtrain/models/qwen3.5-0.8b)
+#   smoke.image, train.image             the ID of the NeMo RL image held by the owner's rootless Docker daemon (no job
+#                                        pulls an image): one of gatedtrain's pinned NeMo RL images
+#                                        (`gatedtrain.families.nemo_rl.NEMO_RL_IMAGES`), or on a rootless host the image
+#                                        built from `containers/nemo-rl-rootless/` with its ID listed in
+#                                        GATEDTRAIN_PACK_VLM_CLEVR_EXTRA_IMAGES (see the README), e.g. sha256:<64 hex>
+#
+# smoke and train take the same image. The step names are the usual ones, so the artifacts keep their names; the stage
+# types carry the pack's `clevr_` prefix. The recipe's settings (60 steps, memory rung a) come from `write_recipe`.
+name: vlm-clevr
+stages:
+  - {name: intake_seal, stage: intake_seal}
+  - {name: profile_data, stage: clevr_profile_data,
+     inputs: {train_part: intake_seal.train_part}}
+  - {name: choose_task_and_base, stage: clevr_choose_task_and_base,
+     params: {base_model_dir: null},
+     inputs: {profile: profile_data.profile}}
+  - {name: preregister, stage: preregister,
+     inputs: {sealed_summary: intake_seal.sealed_summary, deployment: choose_task_and_base.deployment,
+              base_model: choose_task_and_base.base}}
+  - {name: build_train_set, stage: clevr_build_train_set,
+     inputs: {train_part: intake_seal.train_part}}
+  - {name: write_recipe, stage: clevr_write_recipe,
+     inputs: {train_set: build_train_set.train_set}}
+  - {name: smoke, stage: clevr_smoke,
+     params: {image: null},
+     inputs: {base: choose_task_and_base.base, train_set: build_train_set.train_set, recipe: write_recipe.recipe}}
+  - {name: train, stage: clevr_train,
+     params: {image: null},
+     inputs: {base: choose_task_and_base.base, train_set: build_train_set.train_set, recipe: write_recipe.recipe,
+              smoke: smoke.smoke}}
+  - {name: evaluate_sealed, stage: evaluate_sealed,
+     inputs: {registration: preregister.registration, baseline_model: choose_task_and_base.base,
+              candidate_model: train.model}}
+  - {name: gate, stage: gate,
+     inputs: {registration: preregister.registration, baseline_records: evaluate_sealed.baseline_records,
+              candidate_records: evaluate_sealed.candidate_records}}
+  - {name: report, stage: report,
+     inputs: {registration: preregister.registration, power: intake_seal.power, gate_result: gate.gate_result}}
