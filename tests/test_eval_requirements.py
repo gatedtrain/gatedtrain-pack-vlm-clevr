@@ -117,7 +117,28 @@ class EvalRequirementsTest(unittest.TestCase):
 
     def test_pack_dependencies_unchanged(self):
         self.assertEqual(tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["dependencies"],
-                         ["gatedtrain>=0.6,<0.7"])
+                         ["gatedtrain>=0.7,<0.8"])
+
+    def test_pack_version_is_one_value(self):
+        """`__version__` and the project version are the same release (the README and the tag name it)."""
+        import gatedtrain_pack_vlm_clevr as pack
+        self.assertEqual(pack.__version__, tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"])
+
+    def test_no_image_id_is_written_in_the_pack(self):
+        """Image IDs are data in gatedtrain's image lock and the owner's image config, never in the pack's code, YAML
+        or README (engineering rule 1)."""
+        import re
+        id_re = re.compile(r"sha256:[0-9a-f]{64}")
+        files = [*PACKAGE.rglob("*.py"), *PACKAGE.glob("*.yaml"), REPO / "README.md"]
+        self.assertTrue(files)
+        for path in files:
+            with self.subTest(path=path.name):
+                self.assertIsNone(id_re.search(path.read_text()))
+
+    def test_rootless_containerfile_is_not_duplicated(self):
+        """The derived image's recipe lives in gatedtrain (`containers/nemo-rl-rootless`); the pack points to it."""
+        self.assertFalse((REPO / "containers").exists())
+        self.assertIn("containers/nemo-rl-rootless", (REPO / "README.md").read_text())
 
 
 class ReadmeTest(unittest.TestCase):
@@ -142,7 +163,9 @@ class ReadmeTest(unittest.TestCase):
 
     def test_readme_states_the_pinned_facts(self):
         flat = " ".join(self.text.split())
-        for needle in ("2fc06364715b967f1860aea9cf38778875588b17", "decoding: greedy", "max_num_seqs=1", "64 MiB", "NEMO_RL_IMAGES"):
+        for needle in ("2fc06364715b967f1860aea9cf38778875588b17", "decoding: greedy", "max_num_seqs=1", "64 MiB", "gatedtrain image add",
+                       "gatedtrain image list", "Changes in 0.3.0", "deprecated", "same-user", "separate-user",
+                       "docs/sudo-free-quickstart.md", "docs/rootless-nemo-rl.md"):
             self.assertIn(needle, flat)
 
     def test_no_host_paths(self):

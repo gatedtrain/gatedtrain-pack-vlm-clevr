@@ -1,6 +1,6 @@
 # gatedtrain-pack-vlm-clevr
 
-A scenario pack for [gatedtrain](https://github.com/gatedtrain/gatedtrain) (`gatedtrain>=0.6,<0.7`) for
+A scenario pack for [gatedtrain](https://github.com/gatedtrain/gatedtrain) (`gatedtrain>=0.7,<0.8`) for
 vision-language models: it teaches a small VLM to answer counting and yes/no questions about pictures, and lets
 gatedtrain decide, by a rule fixed before training, whether the trained model really is better.
 
@@ -10,6 +10,43 @@ included; after training, the keeper answers the sealed questions with the base 
 answer itself. The gate passes only when the trained model beats the base by the registered rule.
 
 It is a prototype: the models it trains are not promotable.
+
+## Changes in 0.3.0
+
+- Needs gatedtrain 0.7 (`gatedtrain>=0.7,<0.8`). Its CPU tests (117) pass unchanged against 0.6.0 and the 0.7.0
+  candidate; the changes below are the pack adopting what 0.7 offers.
+- **Trainer images come from gatedtrain's image lock.** The pack no longer imports the image constants
+  (`NEMO_RL_IMAGES`); `job.accepted_images()` is gatedtrain's `accepted_images(logical)` for `nemo-rl/tierb`,
+  `nemo-rl/tierb-uid1000` and `nemo-rl/tierb-rootless`: the maintainer lock, plus the images you recorded with
+  `gatedtrain image add` (see "What you need"). A refusal names `gatedtrain image add`; an untrustworthy image config is
+  refused (IMG-3), not ignored.
+- **`GATEDTRAIN_PACK_VLM_CLEVR_EXTRA_IMAGES` is deprecated.** It is a workaround kept for this release only, because the
+  0.2.0 README told rootless hosts to use it. It still adds the IDs it lists and warns (`FutureWarning`) at every use.
+  It is removed in 0.4.0; replace it with `gatedtrain image add`. Owner: the pack maintainer.
+- **The Containerfile moved.** `containers/nemo-rl-rootless/` is no longer in this repository: it is gatedtrain's
+  `containers/nemo-rl-rootless` (the same layer, checked file by file against this pack's copy; the build takes the base
+  image as `--build-arg BASE`). The gatedtrain source checkout holds it; the wheel does not.
+- Keeper modes: see "Keeper modes" below.
+- Known limits of this release: no GPU end to end run was made with gatedtrain 0.7 (the CPU tests use fake containers);
+  the image you build is host specific, so every rootless host runs `image add` once; a derived image is user-added in
+  the report, so `gatedtrain verify --require-maintainer-images` exits 1 for a rootless-host run (the warning in the
+  report names the image and its recipe); the keeper's eval venv still comes from `gatedtrain setup host`, a script for
+  root, in both keeper modes (a user-owned eval tree for a same-user keeper has not been tried); a same-user keeper
+  needs `--inference-image` too, because this pack's generator is a batch generator.
+
+## Keeper modes
+
+gatedtrain 0.7 has two keeper modes and every result states the one that produced it. **Same-user** (the default of
+`gatedtrain setup keeper`, no sudo): the keeper runs under your own OS user and follows the procedure, but anything
+running as you, such as an agent with a shell, can read the sealed rows, the labels and the keeper's key; the report
+says the data was not protected from your account. **Separate-user** (`gatedtrain setup keeper --mode separate-user`,
+one sudo): the keeper runs under its own OS user and the sealed rows are out of your account's reach. This pack works in
+both; in same-user mode the pack needs to be installed in the environment you run `gatedtrain` from (the keeper runs
+from it), in separate-user mode also in the keeper's own environment. Quote the mode line of the report when you quote a
+result, and pass `--require-keeper-mode separate-user` to `project create` to refuse a weaker keeper. The run below was
+made before gatedtrain 0.7 existed and does not state a keeper mode. See gatedtrain's
+[Quickstart without sudo](https://github.com/gatedtrain/gatedtrain/blob/main/docs/sudo-free-quickstart.md) and
+[AI-native projects](https://github.com/gatedtrain/gatedtrain/blob/main/docs/ai-native.md#keeper-modes).
 
 ## A tested run
 
@@ -34,7 +71,7 @@ pipeline with fake containers.
 ## Decoding
 
 By default the pack registers **greedy decoding**: `decoding: greedy`, temperature 0, top_p 1.0, at most 512 new tokens,
-one evaluation seed (11), one sample per item. It needs gatedtrain 0.6 or later: the keeper checks greedy decoding by
+one evaluation seed (11), one sample per item. It needs gatedtrain 0.6 or later (this release needs 0.7): the keeper checks greedy decoding by
 generating every sealed item once more under a seed the registration does not name and refuses the attempt if the
 predictions differ (AN-26; the refused attempt costs its alpha).
 
@@ -51,8 +88,9 @@ four seeds 11-14); the keeper needs no determinism check for it.
 
 ## How it works
 
-Same shape as `gatedtrain-pack-text-gsm8k`: the owner prepares data and trains; the keeper, a service under its own OS
-user, holds the sealed rows and runs the evaluation. Stages of the pipeline (`pipeline.yaml`):
+Same shape as `gatedtrain-pack-text-gsm8k`: the owner prepares data and trains; the keeper, a service of gatedtrain,
+holds the sealed rows and runs the evaluation. Whether the keeper's OS user keeps the sealed rows from your account
+depends on the keeper mode (see "Keeper modes"). Stages of the pipeline (`pipeline.yaml`):
 
 `intake_seal` -> `profile_data` -> `choose_task_and_base` -> `preregister` -> `build_train_set` -> `write_recipe` ->
 `smoke` (5 GRPO steps, GPU) -> `train` (60 GRPO steps, GPU) -> `evaluate_sealed` -> `gate` -> `report`.
@@ -82,17 +120,24 @@ fit.
 
 ## What you need (host steps, run by you)
 
-- Linux x86_64, one NVIDIA GPU with about 24 GB, rootless Docker with CDI (see gatedtrain's `setup host`), a running
-  keeper (`gatedtrain setup host`).
-- The derived NeMo RL image, held by your rootless Docker daemon under one of gatedtrain's pinned image IDs
-  (`gatedtrain.families.nemo_rl.NEMO_RL_IMAGES`). A rebuilt image has another ID and is refused; copy the pinned one
-  (`docker save` from the daemon that holds it, `docker load` into yours).
-- On a rootless Docker host the pinned image cannot run as is: NeMo RL writes lock files beside vLLM files that belong to
-  uid 65532 in it, and the container's root (the owner, no capabilities) may not. Build the derived image of
-  `containers/nemo-rl-rootless/` (the same files, owned by root; no network) on your daemon, list its ID in
-  `GATEDTRAIN_PACK_VLM_CLEVR_EXTRA_IMAGES` (comma separated) and use it as the `image` of `smoke` and `train`. It is
-  not the image gatedtrain pins, deliberately; the job's flags are unchanged (no capabilities, no network, user 0:0).
-  The runtime options also leave out `--ulimit memlock=-1`, which a rootless daemon refuses.
+- Linux x86_64, one NVIDIA GPU with about 24 GB, rootless Docker with CDI (`gatedtrain setup check` lists what the host
+  must provide; see gatedtrain's [Quickstart without sudo](https://github.com/gatedtrain/gatedtrain/blob/main/docs/sudo-free-quickstart.md)),
+  a running keeper (`gatedtrain setup keeper`; for a batch generator such as this pack's, with `--inference-image`).
+- A NeMo RL trainer image held by your rootless Docker daemon, by an ID gatedtrain accepts: `gatedtrain image list`
+  shows them (the logical names `nemo-rl/tierb`, `nemo-rl/tierb-uid1000`, `nemo-rl/tierb-rootless`) and
+  `gatedtrain image check <logical> --ref <ref>` tests one. The Tier B image is built from NeMo RL's Dockerfile
+  (gatedtrain's `containers/nemo-rl-tierb`); a rebuilt image has another ID, so a build of yours is accepted only after
+  you record it.
+- On a rootless Docker host the Tier B image cannot run as is: NeMo RL writes lock files beside vLLM files that belong to
+  uid 65532 in it, and the container's root (the owner, no capabilities) may not. Build gatedtrain's
+  `containers/nemo-rl-rootless` (the same files, owned by root; no network; `--build-arg BASE=<the Tier B image>`) on
+  your daemon, then record it once: `gatedtrain image add nemo-rl/tierb-rootless --id sha256:<id of your build> --recipe
+  nemo-rl-rootless --recipe-commit <gatedtrain commit of the Containerfile>`, and use that ID as the `image` of `smoke`
+  and `train`. The job's flags are unchanged (no capabilities, no network, user 0:0). The runtime options also leave out
+  `--ulimit memlock=-1`, which a rootless daemon refuses. gatedtrain's [NeMo RL on a rootless
+  host](https://github.com/gatedtrain/gatedtrain/blob/main/docs/rootless-nemo-rl.md) page has the lessons.
+  `GATEDTRAIN_PACK_VLM_CLEVR_EXTRA_IMAGES` (comma separated IDs) still works in this release and warns; it is deprecated
+  and removed in 0.4.0 (see "Changes in 0.3.0").
 - The base model directory: `Qwen/Qwen3.5-0.8B` at commit `2fc06364715b967f1860aea9cf38778875588b17`, with its
   processor files (`preprocessor_config.json`, `video_preprocessor_config.json`) and `chat_template.jinja`.
 - The keeper's eval venv (`gatedtrain setup host --eval-requirements <this package>/eval-requirements.txt`, CPython
@@ -119,11 +164,11 @@ the recipe's published gate, so scores are not comparable with its `RESULT.md`.
 ## Tests
 
 ```
-pip install -e ".[convert]" "gatedtrain==0.6.0"
+pip install -e ".[convert]" "gatedtrain==0.7.0"
 python -m unittest discover -s tests -t tests
 ```
 
-`GATEDTRAIN_SRC` (a gatedtrain v0.6.0 source checkout) enables the CPU end to end, which runs the stage machine, a
+`GATEDTRAIN_SRC` (a gatedtrain v0.7.0 source checkout) enables the CPU end to end, which runs the stage machine, a
 same-user keeper and fake containers; no GPU, Docker or model is used.
 
 ## License
