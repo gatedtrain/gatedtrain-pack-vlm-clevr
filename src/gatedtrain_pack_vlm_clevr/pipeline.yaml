@@ -13,6 +13,9 @@
 #                                        built from `containers/nemo-rl-rootless/` with its ID listed in
 #                                        GATEDTRAIN_PACK_VLM_CLEVR_EXTRA_IMAGES (see the README), e.g. sha256:<64 hex>
 #
+# choose_task_and_base also takes `decoding: greedy` (the default) or `sampled` (temperature 0.7, four seeds); greedy
+# needs a gatedtrain that registers greedy decoding.
+#
 # smoke and train take the same image. The step names are the usual ones, so the artifacts keep their names; the stage
 # types carry the pack's `clevr_` prefix. The recipe's settings (60 steps, memory rung a) come from `write_recipe`.
 name: vlm-clevr

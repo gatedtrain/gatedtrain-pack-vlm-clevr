@@ -286,10 +286,15 @@ class PackEndToEndTest(unittest.TestCase):
 
         # The keeper passed the deployment's sampler and seeds to each of its two containers.
         dep = self.read(root, "stages/choose_task_and_base/deployment.json")
-        self.assertEqual(dep["eval_seeds"], [11, 12, 13, 14])
+        self.assertEqual(dep["eval_seeds"], [11])
         logged = [json.loads(x) for x in self.sampler_log.read_text(encoding="utf-8").split("\n") if x]
-        self.assertEqual(logged, [{"sampler": dep["sampler"], "seeds": [11, 12, 13, 14]}] * 2)
-        self.assertEqual(dep["sampler"], {"name": "vllm", "temperature": 0.7, "top_p": 1.0, "max_new_tokens": 512})
+        self.assertEqual(len(logged), 2)
+        for doc in logged:                  # the registered seed and the keeper's control seed (AN-26), in any order
+            self.assertEqual(doc["sampler"], dep["sampler"])
+            self.assertEqual(len(doc["seeds"]), 2)
+            self.assertIn(11, doc["seeds"])
+        self.assertEqual(dep["sampler"], {"name": "vllm", "decoding": "greedy", "temperature": 0, "top_p": 1.0,
+                                          "max_new_tokens": 512})
 
         keeper_runs = FakeRuntime(state_dir=self.keeper_fake).runs
         self.assertEqual(len(keeper_runs), 2)

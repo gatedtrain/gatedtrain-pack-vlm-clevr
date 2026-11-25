@@ -163,7 +163,30 @@ class BaseTests(_Layout):
         self.assertTrue(all(mode(f["path"]) == 0o644 for f in base["files"]))
         self.assertEqual(ChooseTaskAndBase().check(ctx, out), [])
         dep = self.proj.read_artifact(out["deployment"])
-        self.assertEqual((dep["sampler"], dep["eval_seeds"]), (stages.SAMPLER, [11, 12, 13, 14]))
+        self.assertEqual((dep["sampler"], dep["eval_seeds"]), (stages.SAMPLER, [11]))
+        self.assertEqual(stages.SAMPLER, {"name": "vllm", "decoding": "greedy", "temperature": 0, "top_p": 1.0,
+                                          "max_new_tokens": 512})
+
+    def test_sampled_decoding_stays_available(self):
+        tp = self.train_part()
+        prof = ProfileData().run(self.ctx("profile_data", {"train_part": tp}), {})["profile"]
+        ctx = self.ctx("choose_task_and_base", {"profile": prof}, {"base_model_dir": str(self.hub),
+                                                                   "decoding": "sampled"})
+        out = ChooseTaskAndBase().run(ctx, {})
+        dep = self.proj.read_artifact(out["deployment"])
+        self.assertEqual((dep["sampler"], dep["eval_seeds"]), (stages.SAMPLED_SAMPLER, [11, 12, 13, 14]))
+        self.assertEqual(stages.SAMPLED_SAMPLER["temperature"], 0.7)
+        self.assertEqual(ChooseTaskAndBase().check(ctx, out), [])
+        greedy_ctx = self.ctx("choose_task_and_base", {"profile": prof}, {"base_model_dir": str(self.hub)})
+        self.assertEqual(len(ChooseTaskAndBase().check(greedy_ctx, out)), 1)     # the deployment is not the chosen one
+
+    def test_unknown_decoding_refused(self):
+        tp = self.train_part()
+        prof = ProfileData().run(self.ctx("profile_data", {"train_part": tp}), {})["profile"]
+        with self.assertRaises(Refused) as cm:
+            ChooseTaskAndBase().plan(self.ctx("c", {"profile": prof}, {"base_model_dir": str(self.hub),
+                                                                      "decoding": "beam"}))
+        self.assertRule(cm, "VLM-2", "decoding")
 
     def test_refusals(self):
         tp = self.train_part()

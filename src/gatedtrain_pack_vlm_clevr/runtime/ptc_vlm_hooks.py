@@ -31,7 +31,7 @@ HERE = Path(__file__).resolve().parent
 # base's pins from a `MODELS.json` beside the base directory; neither exists in the pack's job. The cut carries the
 # pack's registered deployment sampler (a test pins it to the pack's `stages.SAMPLER`) and the hashes of the base
 # directory's files.
-DEPLOYMENT_SAMPLER = {"name": "vllm", "temperature": 0.7, "top_p": 1.0, "max_new_tokens": 512}
+DEPLOYMENT_SAMPLER = {"name": "vllm", "decoding": "greedy", "temperature": 0, "top_p": 1.0, "max_new_tokens": 512}
 
 
 def _utc() -> str:
