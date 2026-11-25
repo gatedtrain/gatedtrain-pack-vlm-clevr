@@ -45,7 +45,7 @@ def eval_python(environ: Mapping[str, str] = os.environ) -> str:
     """The container path of the eval venv's python: `GATEDTRAIN_PACK_VLM_CLEVR_EVAL_PYTHON` when set and not
     empty, else `DEFAULT_EVAL_PYTHON`. A value that is not an absolute path raises ValueError (the pack then fails
     to load, and gatedtrain refuses it, AN-8). The variable is a deprecated workaround, removed in pack 0.4.0: the keeper's
-    own `--eval-python` option (gatedtrain 0.7) replaces the interpreter of an eval-tree generator and is part of the
+    own `--eval-python` option (gatedtrain 0.7.1) replaces the interpreter of an eval-tree generator and is part of the
     keeper's signed environment record. A set variable prints a notice on stderr."""
     if environ.get(EVAL_PYTHON_ENV):
         print(f"warning: {EVAL_PYTHON_ENV} is deprecated: start the keeper with `--eval-python` instead; the variable is "

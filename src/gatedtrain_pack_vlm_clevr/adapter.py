@@ -10,7 +10,8 @@ The row differs from the recipe's in four ways: no spec binding (the pack's stag
 prompt, mounted read-only at its own host path, so the path inside the container is the host path) and the whole
 `{output_root}` (the job's inputs, the images and the base model live under `{output_root}/gatedtrain-<hex>/`), and
 the evaluator is the pack's. Every script runs with an interpreter of the pinned NeMo RL image; there is no host
-interpreter. `GATEDTRAIN_PACK_VLM_CLEVR_RUNTIME` names another runtime directory (it must hold the same scripts).
+interpreter. the host file's `[packs.vlm-clevr] runtime_dir` names another runtime directory (it must hold the same scripts; the
+variable `GATEDTRAIN_PACK_VLM_CLEVR_RUNTIME` is a deprecated workaround).
 
 Runs of this adapter are read by the pack's own stages; `gatedtrain ext-collect` does not read them, so the class's
 run-reading methods refuse. No framework is imported here (MM-12).
