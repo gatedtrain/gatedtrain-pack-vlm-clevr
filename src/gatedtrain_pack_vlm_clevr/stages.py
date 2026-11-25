@@ -583,14 +583,9 @@ class _JobStage:
         image = ctx.params.get("image")
         if not (isinstance(image, str) and image):
             raise _refuse("VLM-4", "params.image", f"image {image!r} is not an image reference",
-                          "set image to the ID of the derived NeMo RL image the owner's Docker daemon holds")
-        try:
-            allowed = job_mod.accepted_images()
-        except ValueError as exc:
-            raise _refuse("VLM-4", "params.image", str(exc), f"fix {job_mod.EXTRA_IMAGES_ENV}") from None
-        if image not in allowed:
-            raise _refuse("VLM-4", "params.image", f"image {image!r} is not one of the pinned NeMo RL images or an "
-                          f"image listed in {job_mod.EXTRA_IMAGES_ENV}", "set image to one of " + ", ".join(allowed))
+                          "set image to the ID of an accepted NeMo RL image the owner's Docker daemon holds "
+                          "(see `gatedtrain image list`)")
+        job_mod.require_accepted_image(image, "params.image")
         return {"image": image}
 
     def _base(self, ctx: StageContext, *, hashes: bool) -> Path:

@@ -8,10 +8,10 @@
 #   choose_task_and_base.base_model_dir  the absolute path of the Qwen/Qwen3.5-0.8B model directory downloaded on the
 #                                        host at the pinned commit (e.g. /srv/gatedtrain/models/qwen3.5-0.8b)
 #   smoke.image, train.image             the ID of the NeMo RL image held by the owner's rootless Docker daemon (no job
-#                                        pulls an image): one of gatedtrain's pinned NeMo RL images
-#                                        (`gatedtrain.families.nemo_rl.NEMO_RL_IMAGES`), or on a rootless host the image
-#                                        built from `containers/nemo-rl-rootless/` with its ID listed in
-#                                        GATEDTRAIN_PACK_VLM_CLEVR_EXTRA_IMAGES (see the README), e.g. sha256:<64 hex>
+#                                        pulls an image): an image gatedtrain accepts (`gatedtrain image list`), or on a
+#                                        rootless host your build of gatedtrain's `containers/nemo-rl-rootless`
+#                                        recorded with `gatedtrain image add nemo-rl/tierb-rootless ...` (see the
+#                                        README), e.g. sha256:<64 hex>
 #
 # choose_task_and_base also takes `decoding: greedy` (the default) or `sampled` (temperature 0.7, four seeds); greedy
 # needs a gatedtrain that registers greedy decoding.
