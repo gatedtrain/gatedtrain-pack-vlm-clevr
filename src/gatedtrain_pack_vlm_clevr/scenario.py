@@ -4,12 +4,13 @@ and its pipeline file.
 - `generators` is empty: the pack has no per-item generator, so a project of this pack needs a keeper, which runs the
   batch generator `vlm_clevr_vllm` (`BATCH`, gatedtrain AN-25) in its inference container.
 - `BATCH` runs `generate_vllm.py` with the python of the keeper's root-owned eval venv, mounted from the keeper's eval
-  trees, on the GPU. The interpreter is `/opt/gatedtrain-keeper/eval-venv/bin/python` (where `gatedtrain setup host`
-  builds the eval venv) unless the environment variable `GATEDTRAIN_PACK_VLM_CLEVR_EVAL_PYTHON` names another
-  absolute path when this module is imported. Only the environment of the keeper's own process counts: the keeper
-  loads its own copy of the scenario and runs the generator from it, whatever the owner's shell sets. The keeper
-  still runs the generator only when that interpreter is a regular file inside one of its configured eval trees
-  (`keeper serve --eval-tree`), so the variable can move the eval venv, never take it out of those trees.
+  trees, on the GPU. The interpreter is `bin/python` of the eval venv `gatedtrain setup host` builds
+  (`gatedtrain.ainative.hostsetup.DEFAULT_EVAL_VENV`) unless the environment variable
+  `GATEDTRAIN_PACK_VLM_CLEVR_EVAL_PYTHON` names another absolute path when this module is imported. Only the
+  environment of the keeper's own process counts: the keeper loads its own copy of the scenario and runs the generator
+  from it, whatever the owner's shell sets. The keeper still runs the generator only when that interpreter is a
+  regular file inside one of its configured eval trees (`keeper serve --eval-tree`), so the variable can move the eval
+  venv, never take it out of those trees.
 - `scorers` registers `vqa_answer` by reference: `answer.score`, the sha256 of `answer.py` (the file that defines
   it, which imports only the standard library), and `answer.label_ok`.
 - `pipeline` is `pipeline.yaml` beside this file.
@@ -18,12 +19,14 @@ and its pipeline file.
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any, Callable, Mapping
 
-from gatedtrain.ainative.batch import BatchGenerator
+from gatedtrain.ainative.batch import DEFAULT_TIME_LIMIT_S, BatchGenerator
+from gatedtrain.ainative.hostsetup import DEFAULT_EVAL_VENV
 from gatedtrain.canonical import file_sha256
 
 from . import answer
@@ -33,14 +36,20 @@ NAME = "vlm-clevr"
 GENERATOR = "vlm_clevr_vllm"
 SCORER = "vqa_answer"
 EVAL_PYTHON_ENV = "GATEDTRAIN_PACK_VLM_CLEVR_EVAL_PYTHON"
-DEFAULT_EVAL_PYTHON = "/opt/gatedtrain-keeper/eval-venv/bin/python"
-TIME_LIMIT_S = 1200
+# The eval venv's python where `gatedtrain setup host` builds it.
+DEFAULT_EVAL_PYTHON = str(PurePosixPath(DEFAULT_EVAL_VENV) / "bin" / "python")
+TIME_LIMIT_S = DEFAULT_TIME_LIMIT_S
 
 
 def eval_python(environ: Mapping[str, str] = os.environ) -> str:
     """The container path of the eval venv's python: `GATEDTRAIN_PACK_VLM_CLEVR_EVAL_PYTHON` when set and not
     empty, else `DEFAULT_EVAL_PYTHON`. A value that is not an absolute path raises ValueError (the pack then fails
-    to load, and gatedtrain refuses it, AN-8)."""
+    to load, and gatedtrain refuses it, AN-8). The variable is a deprecated workaround, removed in pack 0.4.0: the keeper's
+    own `--eval-python` option (gatedtrain 0.7) replaces the interpreter of an eval-tree generator and is part of the
+    keeper's signed environment record. A set variable prints a notice on stderr."""
+    if environ.get(EVAL_PYTHON_ENV):
+        print(f"warning: {EVAL_PYTHON_ENV} is deprecated: start the keeper with `--eval-python` instead; the variable is "
+              "removed in pack 0.4.0", file=sys.stderr)
     value = environ.get(EVAL_PYTHON_ENV) or DEFAULT_EVAL_PYTHON
     if not PurePosixPath(value).is_absolute():
         raise ValueError(f"{EVAL_PYTHON_ENV} must be an absolute path")

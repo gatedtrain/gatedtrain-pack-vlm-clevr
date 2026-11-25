@@ -110,6 +110,29 @@ class _Layout(unittest.TestCase):
             self.assertIn(w, str(cm.exception))
 
 
+class GpuArchitectureTests(_Layout):
+    def test_cuda_arch_is_the_owners_param(self):
+        inputs = self.upto_recipe()
+        self.smoke(inputs)
+        [jid] = self.backend._job_ids()
+        rec = json.loads((self.proj.root / "jobs" / jid / "job.json").read_text())
+        self.assertNotIn("TORCH_CUDA_ARCH_LIST", rec["job"]["env"])        # the record keeps names only
+        self.params = {**self.params, "cuda_arch": "9.0"}
+        self.smoke(inputs)
+        [other] = [j for j in self.backend._job_ids() if j != jid]
+        rec = json.loads((self.proj.root / "jobs" / other / "job.json").read_text())
+        self.assertIn("TORCH_CUDA_ARCH_LIST", rec["job"]["env"])
+        self.assertIn("FLASHINFER_CUDA_ARCH_LIST", rec["job"]["env"])
+
+    def test_bad_cuda_arch_refused(self):
+        inputs = self.upto_recipe()
+        for bad in ("89", "8.9;", "", "8.9\n", 8.9):
+            with self.subTest(bad=bad):
+                with self.assertRaises(Refused) as cm:
+                    Smoke().plan(self.ctx("smoke", inputs, {**self.params, "cuda_arch": bad}, gpu=True))
+                self.assertRule(cm, "VLM-4", "cuda_arch")
+
+
 class ProfileTests(_Layout):
     def test_profile(self):
         tp = self.train_part(12)
@@ -441,6 +464,8 @@ class StageShapeTests(unittest.TestCase):
                                  "clevr_write_recipe", "clevr_smoke", "clevr_train"])
         self.assertTrue(Train.trains and not Smoke.trains)
         self.assertEqual(Smoke.needs, frozenset({"gpu"}))
+        self.assertEqual(Smoke.params, frozenset({"image", "cuda_arch"}))
+        self.assertEqual(Train.params, frozenset({"image", "cuda_arch"}))
 
 
 if __name__ == "__main__":

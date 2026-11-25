@@ -1,6 +1,6 @@
 # gatedtrain-pack-vlm-clevr
 
-A scenario pack for [gatedtrain](https://github.com/gatedtrain/gatedtrain) (`gatedtrain>=0.7,<0.8`) for
+A scenario pack for [gatedtrain](https://github.com/gatedtrain/gatedtrain) (`gatedtrain>=0.7.1,<0.8`) for
 vision-language models: it teaches a small VLM to answer counting and yes/no questions about pictures, and lets
 gatedtrain decide, by a rule fixed before training, whether the trained model really is better.
 
@@ -141,16 +141,34 @@ fit.
 - The base model directory: `Qwen/Qwen3.5-0.8B` at commit `2fc06364715b967f1860aea9cf38778875588b17`, with its
   processor files (`preprocessor_config.json`, `video_preprocessor_config.json`) and `chat_template.jinja`.
 - The keeper's eval venv (`gatedtrain setup host --eval-requirements <this package>/eval-requirements.txt`, CPython
-  3.12, vLLM 0.31.0): the same packages and versions as the text pack's lock (whether vLLM 0.31.0 loads Qwen3.5-0.8B with images is for the first GPU probe to show; none is recorded yet). Set `GATEDTRAIN_PACK_VLM_CLEVR_EVAL_PYTHON` when the venv is not
-  at `/opt/gatedtrain-keeper/eval-venv/bin/python`.
-- `GATEDTRAIN_PACK_VLM_CLEVR_RUNTIME` names another runtime directory than the package's `runtime/` (it must hold the
-  same scripts; the adapter reads it at import).
+  3.12, vLLM 0.31.0): the same packages and versions as the text pack's lock (whether vLLM 0.31.0 loads Qwen3.5-0.8B with images is for the first GPU probe to show; none is recorded yet). Start the keeper with `--eval-python PATH` when the venv is
+  not the one `gatedtrain setup host` builds (the value is part of the keeper's signed environment record); the variable
+  `GATEDTRAIN_PACK_VLM_CLEVR_EVAL_PYTHON` still works as a deprecated workaround, prints a notice, and is removed in
+  pack 0.4.0.
+- Another runtime directory than the package's `runtime/` (it must hold the same scripts; the adapter reads it at import)
+  is the `runtime_dir` key of the `[packs.vlm-clevr]` table in your host file. The variable
+  `GATEDTRAIN_PACK_VLM_CLEVR_RUNTIME` still works as a deprecated workaround and prints a notice; it is removed with
+  gatedtrain 0.9.0.
 
 Copy `pipeline.yaml`, set `choose_task_and_base.base_model_dir` and the `image` of `smoke` and `train`, then
 `gatedtrain project create ... --pipeline <copy> --keeper <socket>` and run the stages in order. Smoke runs before
 training and refuses all-zero rewards and one repeated completion; NeMo RL writes no GPU memory log, so the memory
 bound is the job finishing at the recipe's memory rung (`a`; `b` and `c` are the recipe's fallbacks via the
 `memory_rung` parameter of `write_recipe`).
+
+## Settings that depend on the GPU
+
+Training runs under a memory rung (`a`, `b`, `c`: `write_recipe.memory_rung`), with vLLM `gpu_memory_utilization` 0.2
+and `max_num_seqs` 128 for NeMo RL's colocated generation; the batch generator (`generate_vllm.py`) uses
+`gpu_memory_utilization=0.85`, `max_model_len=1024` and, for greedy decoding, `max_num_seqs=1` with prefix caching off.
+They were chosen and probed on one 24 GB GPU and are part of the pack's code (the generator's hash is registered); they
+are not settings. `max_num_seqs=1` is what makes greedy decoding deterministic and must stay. The knobs a pipeline does
+carry are not gates: `cuda_arch` changes only compile flags and `memory_rung` only how much memory training needs; the
+smoke stage reports no memory bound here (NeMo RL writes no memory log), so no pipeline value can weaken a check.
+
+**Re-probe on another GPU.** On a different GPU, vLLM or driver, run the smoke stage and the greedy determinism probe
+under "Decoding" again: the memory rung that fits, the time of one arm against the generator's time limit, and the items
+that differ between the two seeds (it must be 0).
 
 ## Deviations from the recipe
 
@@ -170,6 +188,27 @@ python -m unittest discover -s tests -t tests
 
 `GATEDTRAIN_SRC` (a gatedtrain v0.7.0 source checkout) enables the CPU end to end, which runs the stage machine, a
 same-user keeper and fake containers; no GPU, Docker or model is used.
+
+## Changes
+
+### 0.3.1 (Unreleased)
+
+Needs gatedtrain 0.7.1 (`gatedtrain>=0.7.1,<0.8`): it uses the host file's `[packs]` tables, `owner_gpu_mem_limit_gb` and the
+keeper's `--eval-python`.
+
+
+- **Owner-side channels.** The runtime directory is the host file's `[packs.vlm-clevr] runtime_dir` and the eval
+  interpreter the keeper's `--eval-python`; the two variables are deprecated workarounds that print a notice (removed with
+  gatedtrain 0.9.0 and pack 0.4.0). These need gatedtrain 0.7.1, which adds them. `GATEDTRAIN_PACK_VLM_CLEVR_EXTRA_IMAGES`
+  (image IDs) is unchanged: image pins are moving to a lock file in a separate piece of work.
+
+- **The GPU architecture is the owner's param.** `TORCH_CUDA_ARCH_LIST` and `FLASHINFER_CUDA_ARCH_LIST` were fixed at
+  `8.9`, the GPU the recipe was written on. Set `cuda_arch` on `smoke` and `train` (for example `cuda_arch: "8.9"`,
+  from `nvidia-smi --query-gpu=compute_cap`); without it the job exports neither and the toolchain reads the GPU. A
+  pipeline copy that relied on the old behaviour on an 8.9 GPU adds it.
+- Values the pack shared with gatedtrain are imported from it (the generator's time limit, the eval venv's location,
+  the container run options); the image limits and magic bytes the stages repeated come from `data.py`, and the GPU-hour
+  estimates are written once. `tests/test_single_source.py` checks the copies that must stay in the container scripts.
 
 ## License
 

@@ -163,7 +163,7 @@ class PackEndToEndTest(unittest.TestCase):
         self.sampler_log = self.tmp / "sampler-log.jsonl"
 
         path = f"{tripwire}{os.pathsep}{os.environ.get('PATH', os.defpath)}"
-        common = {SRC_ENV: str(src), "PATH": path, scenario.EVAL_PYTHON_ENV: str(self.eval_python)}
+        common = {SRC_ENV: str(src), "PATH": path}
         env = base_env()
         env.update(common)
         env.update({launch.ENV_HOST_WORK: str(self.work), launch.ENV_OUTPUT_ROOT: str(self.out_root),
@@ -191,7 +191,7 @@ class PackEndToEndTest(unittest.TestCase):
                  "GATEDTRAIN_PACK_TEST_LABELS": str(self.data),
                  "GATEDTRAIN_PACK_TEST_SAMPLER_LOG": str(self.sampler_log)},
             args=["--inference-image", KEEPER_IMAGE, "--docker-host", f"unix://{sock_dir / 'docker.sock'}",
-                  "--eval-tree", str(self.eval_tree)])
+                  "--eval-tree", str(self.eval_tree), "--eval-python", str(self.eval_python)])
         self.kp.__enter__()
         self.addCleanup(self.kp.__exit__, None, None, None)
         self.addCleanup(self.assert_no_tripwire)

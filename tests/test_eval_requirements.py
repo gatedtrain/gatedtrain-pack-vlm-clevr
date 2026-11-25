@@ -117,7 +117,7 @@ class EvalRequirementsTest(unittest.TestCase):
 
     def test_pack_dependencies_unchanged(self):
         self.assertEqual(tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["dependencies"],
-                         ["gatedtrain>=0.7,<0.8"])
+                         ["gatedtrain>=0.7.1,<0.8"])
 
     def test_pack_version_is_one_value(self):
         """`__version__` and the project version are the same release (the README and the tag name it)."""

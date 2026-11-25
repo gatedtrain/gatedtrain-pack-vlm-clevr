@@ -24,20 +24,25 @@ from typing import Any, NoReturn
 
 from gatedtrain.errors import Problem, Refused
 from gatedtrain.ext.rowkit import CONTAINER_PATHS, runtime_dir
-from gatedtrain.families.nemo_rl import NEMO_RL_COMMIT, NEMO_RL_PYTHON
+from gatedtrain.families.nemo_rl import NEMO_RL_COMMIT, NEMO_RL_PYTHON, NEMO_RL_RUN_OPTIONS
 
 NAME = "vlm-clevr-grpo"
 TRAINER_ID = "rl.nemo_rl_vlm@0.1"
 EVALUATOR_ID = "vqa.vqa_answer@0.1"
 FRAMEWORK_PACKAGE = "nemo_rl"
+PACK = "vlm-clevr"                   # the name of this pack's `[packs.<name>]` table in the owner's host file
+# The runtime directory: the host file's `[packs.vlm-clevr] runtime_dir`, else this package's `runtime/`. The variable
+# below is a deprecated workaround (it prints a notice naming the file key) that goes away with gatedtrain 0.9.0.
 RUNTIME_ENV = "GATEDTRAIN_PACK_VLM_CLEVR_RUNTIME"
-RUNTIME = runtime_dir(RUNTIME_ENV, __file__, parents=0)
+RUNTIME = runtime_dir(RUNTIME_ENV, __file__, parents=0, pack=PACK)
 OUTPUT_ROOT = "{output_root}"
 SCRIPT = "run_vlm_nemo.py"
+GPU_H_ESTIMATE = {"smoke": 0.25, "full": 1.0}      # GPU-hours per profile: the registry row and the jobs use these
 # gatedtrain's NEMO_RL_RUN_OPTIONS minus `--ulimit memlock=-1`: a rootless Docker daemon cannot raise the locked-memory
 # limit above its own hard limit, and the container then fails to start ("error setting rlimit type 8"). The
 # container keeps the daemon's limit.
-RUN_OPTIONS = ("--shm-size=16g", "--ulimit", "nofile=65535:65535", "-w", "/opt/nemo-rl")
+_MEMLOCK = NEMO_RL_RUN_OPTIONS.index("memlock=-1")
+RUN_OPTIONS = NEMO_RL_RUN_OPTIONS[:_MEMLOCK - 1] + NEMO_RL_RUN_OPTIONS[_MEMLOCK + 1:]
 
 TRAINER_ROWS: dict[str, dict[str, Any]] = {NAME: {
     "uses": (TRAINER_ID,),
@@ -49,7 +54,7 @@ TRAINER_ROWS: dict[str, dict[str, Any]] = {NAME: {
                    "tokenizer_config.json", "chat_template.jinja", "preprocessor_config.json",
                    "video_preprocessor_config.json", "vocab.json", "merges.txt", "sampler.json"),
     "consumption": {"target": "row", "fallback": None},
-    "gpu_h_estimate": 1.0,                           # the full profile (job.PROFILES)
+    "gpu_h_estimate": GPU_H_ESTIMATE["full"],        # the full profile (job.PROFILES)
     "evaluators": (EVALUATOR_ID,),
     "framework": FRAMEWORK_PACKAGE,
     "input_roots": (RUNTIME, OUTPUT_ROOT),
