@@ -182,11 +182,11 @@ the recipe's published gate, so scores are not comparable with its `RESULT.md`.
 ## Tests
 
 ```
-pip install -e ".[convert]" "gatedtrain==0.7.0"
+pip install -e ".[convert]" "gatedtrain==0.7.1"
 python -m unittest discover -s tests -t tests
 ```
 
-`GATEDTRAIN_SRC` (a gatedtrain v0.7.0 source checkout) enables the CPU end to end, which runs the stage machine, a
+`GATEDTRAIN_SRC` (a gatedtrain v0.7.1 source checkout) enables the CPU end to end, which runs the stage machine, a
 same-user keeper and fake containers; no GPU, Docker or model is used.
 
 ## Changes
