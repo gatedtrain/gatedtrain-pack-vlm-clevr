@@ -29,6 +29,7 @@ from gatedtrain.errors import Problem, Refused
 
 from . import job as job_mod
 from .answer import canonical_label, label_ok
+from .data import JPEG_MAGIC, MAX_PIXELS, PNG_MAGIC
 
 SCHEMA_VERSION = 1
 SCHEMA_PROFILE = "gatedtrain_pack_vlm_clevr.profile"
@@ -60,13 +61,8 @@ MEMORY_RUNG = "a"
 JOB_POLL_S = 30.0
 MIN_SAMPLES = 8
 PROMPTS_PER_STEP = 16                   # run_vlm_nemo.py PROFILES; one epoch (NeMo RL's max_num_epochs 1) of the rows
-# The prompt budget: Qwen3.5 reads one image token per 32 x 32 pixels, the sequence limit is 1,024 tokens of which
-# about 110 are text and up to 512 the answer, so an image may use about 400 tokens (about 400,000 pixels).
-MAX_PIXELS = 400_000
-MAX_LOG_BYTES = 64 * 1024 * 1024
+MAX_LOG_BYTES = 64 * 1024 * 1024        # the largest job log file read back for the smoke judgement
 DATA_URI = re.compile(r"data:image/(png|jpeg);base64,")
-PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
-JPEG_MAGIC = b"\xff\xd8\xff"
 BASE_DIR = "base-model"
 DATA_DIR = "train-data"
 _CHECKPOINT = re.compile(r"checkpoint-([0-9]+)")
@@ -575,7 +571,7 @@ class WriteRecipe:
 class _JobStage:
     version = "0.1"
     needs = frozenset({"gpu"})
-    params = frozenset({"image"})
+    params = frozenset({"image", "cuda_arch"})        # `cuda_arch`: optional, the owner's GPU (see `_params`)
     PROFILE = ""
     RULE = ""
 
@@ -586,7 +582,14 @@ class _JobStage:
                           "set image to the ID of an accepted NeMo RL image the owner's Docker daemon holds "
                           "(see `gatedtrain image list`)")
         job_mod.require_accepted_image(image, "params.image")
-        return {"image": image}
+        out = {"image": image}
+        arch = ctx.params.get("cuda_arch")
+        if arch is not None:
+            if not job_mod.valid_cuda_arch(arch):
+                raise _refuse("VLM-4", "params.cuda_arch", f"cuda_arch {arch!r} is not a list of compute capabilities",
+                              "set cuda_arch to your GPU's compute capability such as 8.9, or leave it null")
+            out["cuda_arch"] = arch
+        return out
 
     def _base(self, ctx: StageContext, *, hashes: bool) -> Path:
         fix = "rerun clevr_choose_task_and_base"
@@ -645,7 +648,8 @@ class _JobStage:
         self._verify_images(data, ts)
         backend = _backend(ctx, self.name)
         j = job_mod.train_job(profile=self.PROFILE, image=p["image"], inputs_dir=data, images_dir=Path(ts["images_dir"]),
-                              base_dir=base_dir, seed=recipe["seed"], memory_rung=recipe["memory_rung"])
+                              base_dir=base_dir, seed=recipe["seed"], memory_rung=recipe["memory_rung"],
+                              cuda_arch=p.get("cuda_arch"))
         j = dataclasses.replace(j, output_dir=str(backend.new_output_dir(j.label, key=j.key())))
         job_id = backend.submit(j)
         status = backend.wait(job_id, poll_s=JOB_POLL_S)

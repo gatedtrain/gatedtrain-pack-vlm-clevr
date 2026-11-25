@@ -16,7 +16,13 @@
 # choose_task_and_base also takes `decoding: greedy` (the default) or `sampled` (temperature 0.7, four seeds); greedy
 # needs a gatedtrain that registers greedy decoding.
 #
-# smoke and train take the same image. The step names are the usual ones, so the artifacts keep their names; the stage
+# smoke and train take the same image, and one optional param that describes the owner's GPU
+# (`params: {image: ..., cuda_arch: "8.9"}`); left out, the job exports no TORCH_CUDA_ARCH_LIST and no
+# FLASHINFER_CUDA_ARCH_LIST (the toolchain reads the GPU):
+#
+#   smoke.cuda_arch, train.cuda_arch     the GPU's compute capability, such as 8.9 (`nvidia-smi --query-gpu=compute_cap`)
+#
+# The step names are the usual ones, so the artifacts keep their names; the stage
 # types carry the pack's `clevr_` prefix. The recipe's settings (60 steps, memory rung a) come from `write_recipe`.
 name: vlm-clevr
 stages:

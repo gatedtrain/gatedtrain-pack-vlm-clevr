@@ -33,21 +33,21 @@ RULE = "VLM-4"
 PACKAGE_DIR = Path(__file__).resolve().parent
 FRAMEWORK = {"name": FRAMEWORK_PACKAGE, "version": NEMO_RL_COMMIT, "commit": NEMO_RL_COMMIT}
 
-# The recipe's launch facts (its runtime/README.md "Launch request facts"). TORCH_CUDA_ARCH_LIST 8.9 is the recipe
-# host's GPU.
+# The recipe's launch facts (its runtime/README.md "Launch request facts"). It names no GPU: the two architecture lists
+# (`TORCH_CUDA_ARCH_LIST`, `FLASHINFER_CUDA_ARCH_LIST`) are the owner's GPU, so a stage parameter (`cuda_arch`,
+# `train_job`'s argument) adds them.
 ENV = {
-    "FLASHINFER_CUDA_ARCH_LIST": "8.9",
     "HF_HUB_OFFLINE": "1",
     "HOME": "/tmp/home",
     "PYTHONDONTWRITEBYTECODE": "1",
     "PYTHONUNBUFFERED": "1",
     "RAY_memory_monitor_refresh_ms": "0",
-    "TORCH_CUDA_ARCH_LIST": "8.9",
 }
+ARCH_ENV = ("TORCH_CUDA_ARCH_LIST", "FLASHINFER_CUDA_ARCH_LIST")
 # run_vlm_nemo.py PROFILES: smoke 5 steps, full 60 steps, both 16 prompts x 8 generations per step.
 PROFILES = {
-    "smoke": {"gpu_hours_est": 0.25, "time_limit_s": 3600},
-    "full": {"gpu_hours_est": 1.0, "time_limit_s": 10800},
+    "smoke": {"gpu_hours_est": adapter.GPU_H_ESTIMATE["smoke"], "time_limit_s": 3600},
+    "full": {"gpu_hours_est": adapter.GPU_H_ESTIMATE["full"], "time_limit_s": 10800},
 }
 MEMORY_RUNGS = ("a", "b", "c")
 
@@ -111,14 +111,30 @@ def _refused(message: str, fix: str) -> Refused:
     return Refused([Problem(RULE, "job", message, fix)])
 
 
+# One capability is `<major>.<minor>` with an optional arch suffix (`9.0a`) or `+PTX`; several are separated by single
+# spaces, the one separator both PyTorch and FlashInfer read (`;` is PyTorch's alone).
+_CUDA_ARCH = re.compile(r"[0-9]+\.[0-9]+[a-z]?(?:\+PTX)?(?: [0-9]+\.[0-9]+[a-z]?(?:\+PTX)?)*")
+MAX_CUDA_ARCH_CHARS = 64
+
+
+def valid_cuda_arch(value: object) -> bool:
+    """Whether `value` is a `TORCH_CUDA_ARCH_LIST`: compute capabilities such as `8.9`, `9.0a`, `9.0+PTX`, separated by
+    single spaces, at most `MAX_CUDA_ARCH_CHARS` long."""
+    return isinstance(value, str) and len(value) <= MAX_CUDA_ARCH_CHARS and _CUDA_ARCH.fullmatch(value) is not None
+
+
 def train_job(*, profile: str, image: str, inputs_dir: Path, images_dir: Path, base_dir: Path, seed: int,
-              memory_rung: str = "a", runtime_dir: Path | None = None) -> Job:
+              memory_rung: str = "a", runtime_dir: Path | None = None, cuda_arch: str | None = None) -> Job:
     """The training job of `profile` (smoke or full). `inputs_dir` holds `train.jsonl`; `images_dir` the images its rows
     name by absolute path; `base_dir` is the base model directory. `runtime_dir` defaults to the adapter's runtime
     directory and must be that directory. ValueError for another profile or memory rung; Refused (VLM-4) for an image
-    that is not an accepted NeMo RL image or another runtime directory."""
+    that is not an accepted NeMo RL image or another runtime directory. `cuda_arch`, the GPU architecture list of the
+    owner's host, sets both architecture variables (left out when None); ValueError when it is not a list of compute
+    capabilities."""
     if profile not in PROFILES:
         raise ValueError(f"profile {profile!r} is not one of {', '.join(PROFILES)}")
+    if cuda_arch is not None and not valid_cuda_arch(cuda_arch):
+        raise ValueError(f"cuda_arch {cuda_arch!r} is not a list of compute capabilities such as '8.9'")
     if memory_rung not in MEMORY_RUNGS:
         raise ValueError(f"memory rung {memory_rung!r} is not one of {', '.join(MEMORY_RUNGS)}")
     require_accepted_image(image)
@@ -126,8 +142,8 @@ def train_job(*, profile: str, image: str, inputs_dir: Path, images_dir: Path, b
     if runtime_dir is not None and Path(runtime_dir).resolve() != Path(runtime).resolve():
         raise _refused(f"runtime directory {runtime_dir} is not the adapter's {runtime}, which the adapter row names "
                        "as an input root",
-                       f"set {adapter.RUNTIME_ENV}={runtime_dir} in the environment of every gatedtrain process that "
-                       "runs smoke or train (the adapter reads it at import)")
+                       f"set `runtime_dir = \"{runtime_dir}\"` in the [packs.{adapter.PACK}] table of the host file "
+                       "(the adapter reads it at import)")
     inputs, images = Path(inputs_dir), Path(images_dir)
     return Job(
         label=f"vlm-grpo-{profile}",
@@ -136,7 +152,7 @@ def train_job(*, profile: str, image: str, inputs_dir: Path, images_dir: Path, b
         framework=dict(FRAMEWORK),
         argv=(NEMO_RL_PYTHON, f"{runtime}/{SCRIPT}", "--profile", profile, "--out", "/out", "--seed", str(seed),
               "--base", "/inputs/base-model", "--memory", memory_rung, "--train-file", "/inputs/train.jsonl"),
-        env=dict(ENV),
+        env={**ENV, **({name: cuda_arch for name in ARCH_ENV} if cuda_arch is not None else {})},
         mounts=(Mount(runtime, runtime), Mount(str(images), str(images)),
                 Mount(str(inputs / "train.jsonl"), "/inputs/train.jsonl"),
                 Mount(str(Path(base_dir)), "/inputs/base-model")),

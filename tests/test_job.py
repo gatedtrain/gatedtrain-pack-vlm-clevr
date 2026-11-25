@@ -71,6 +71,16 @@ class JobTests(_Layout):
         self.assertEqual((j.network, j.gpu, j.tmpfs, j.training_seed), ("none", True, ("/tmp",), 7100))
         self.assertEqual(self.job("full").gpu_hours_est, 1.0)
 
+    def test_env_names_no_gpu_unless_asked(self):
+        j = self.job()
+        self.assertEqual(set(j.env), {"HF_HUB_OFFLINE", "HOME", "PYTHONDONTWRITEBYTECODE", "PYTHONUNBUFFERED",
+                                      "RAY_memory_monitor_refresh_ms"})
+        j = self.job(cuda_arch="8.9")
+        self.assertEqual((j.env["TORCH_CUDA_ARCH_LIST"], j.env["FLASHINFER_CUDA_ARCH_LIST"]), ("8.9", "8.9"))
+        self.assertEqual(job_problems(j, self.cfg), [])
+        with self.assertRaises(ValueError):
+            self.job(cuda_arch="89")
+
     def test_foreign_env_name_refused(self):
         j = self.job()
         bad = dataclasses.replace(j, env={**j.env, "HF_TOKEN": "x"})
@@ -142,7 +152,7 @@ class JobTests(_Layout):
     def test_other_runtime_refused(self):
         with self.assertRaises(Refused) as cm:
             self.job(runtime_dir=self.tmp)
-        self.assertIn(adapter.RUNTIME_ENV, str(cm.exception))
+        self.assertIn("[packs.vlm-clevr]", str(cm.exception))
 
     def test_bad_profile_and_rung(self):
         with self.assertRaises(ValueError):

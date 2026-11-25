@@ -24,7 +24,10 @@ from .answer import canonical_label
 
 MAX_BYTES = 64 * 1024 * 1024
 MAX_IMAGE_BYTES = 16 * 1024 * 1024
-MAX_PIXELS = 400_000      # the prompt budget: about 400 image tokens (stages.MAX_PIXELS)
+# The prompt budget: Qwen3.5 reads one image token per 32 x 32 pixels, the sequence limit is 1,024 tokens of which about
+# 110 are text and up to 512 the answer, so an image may use about 400 tokens (about 400,000 pixels). The stages import
+# this; generate_vllm.py, which runs in the keeper's container, repeats it (tests/test_single_source.py checks).
+MAX_PIXELS = 400_000
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 JPEG_MAGIC = b"\xff\xd8\xff"
 
