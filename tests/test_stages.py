@@ -20,9 +20,9 @@ from gatedtrain.ainative.stage import StageContext
 from gatedtrain.ainative.trust_stages import SCHEMA_TRAIN_PART
 from gatedtrain.errors import Refused
 from gatedtrain.ext import launch, registry
-from gatedtrain.families.nemo_rl import NEMO_RL_IMAGE
 from gatedtrain.testing.fake_runtime import FakeRuntime
 
+from _images import TIERB_IMAGE, add_owner_image, isolate_owner_config
 from _pack_fakes import CUT_FILES, play_training, png, write_base
 from gatedtrain_pack_vlm_clevr import adapter, stages
 from gatedtrain_pack_vlm_clevr.stages import (BuildTrainSet, ChooseTaskAndBase, ProfileData, Smoke, Train,
@@ -53,6 +53,7 @@ class _Layout(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.tmp = Path(os.path.realpath(tempfile.mkdtemp(prefix="tmp-job-", dir=Path(__file__).resolve().parent)))
         self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.owner_config = isolate_owner_config(self, self.tmp)
         self.work, self.out_root, self.hub = self.tmp / "work", self.tmp / "out", self.tmp / "hub"
         for d in (self.work, self.out_root):
             d.mkdir()
@@ -65,9 +66,9 @@ class _Layout(unittest.TestCase):
         self.proj = create_project(self.tmp / "proj", goal="g", data=data, pipeline="p.yaml",
                                    budget={"gpu_hours": 10.0, "llm_usd": 0})
         self.rewards, self.texts, self.seen = (1.0, 0.0, 0.0, 0.0), None, []
-        self.rt = FakeRuntime({NEMO_RL_IMAGE: self.play})
+        self.rt = FakeRuntime({TIERB_IMAGE: self.play})
         self.backend = LocalBackend(self.proj, self.rt, host=self.cfg, sleep=lambda s: None, clock=lambda: CLOCK)
-        self.params = {"image": NEMO_RL_IMAGE}
+        self.params = {"image": TIERB_IMAGE}
 
     def play(self, run_spec, host_path) -> int:
         self.seen.append(host_path("/inputs/train.jsonl").read_bytes())
@@ -396,13 +397,14 @@ class JobStageTests(_Layout):
             with self.subTest(image=image), self.assertRaises(Refused):
                 Smoke().plan(self.ctx("smoke", inputs, {"image": image}, gpu=True))
 
-    def test_stage_accepts_a_listed_derived_image(self):
+    def test_stage_accepts_a_derived_image_the_owner_added(self):
         inputs = self.upto_recipe()
         derived = "sha256:" + "cd" * 32
-        with self.assertRaises(Refused):
+        with self.assertRaises(Refused) as cm:
             Smoke().plan(self.ctx("smoke", inputs, {"image": derived}, gpu=True))
-        with mock.patch.dict(os.environ, {"GATEDTRAIN_PACK_VLM_CLEVR_EXTRA_IMAGES": derived}):
-            Smoke().plan(self.ctx("smoke", inputs, {"image": derived}, gpu=True))
+        self.assertIn("gatedtrain image add", cm.exception.problems[0].fix)
+        add_owner_image(self.owner_config, "nemo-rl/tierb-rootless", derived)
+        Smoke().plan(self.ctx("smoke", inputs, {"image": derived}, gpu=True))
 
     def test_cut_hash_mismatch_refused(self):
         inputs = self.upto_recipe()

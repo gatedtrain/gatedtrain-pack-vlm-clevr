@@ -41,9 +41,9 @@ import yaml
 from gatedtrain.ext import launch
 from gatedtrain.testing.fake_runtime import FakeRuntime
 
-from gatedtrain.families.nemo_rl import NEMO_RL_IMAGE
 
 from gatedtrain_pack_vlm_clevr import adapter, scenario
+from _images import TIERB_IMAGE
 from _pack_fakes import BASE_FILES, CUT_FILES, png, write_base
 
 TESTS = Path(__file__).resolve().parent
@@ -169,6 +169,7 @@ class PackEndToEndTest(unittest.TestCase):
         env.update({launch.ENV_HOST_WORK: str(self.work), launch.ENV_OUTPUT_ROOT: str(self.out_root),
                     launch.ENV_HOST_CONFIG: str(self.host_file),
                     "GATEDTRAIN_TEST_BACKEND_RUNTIME": f"fake:{self.fake}"})
+        env["XDG_CONFIG_HOME"] = str(self.tmp / "config")      # the owner's image config is a file of the test
         self.env = env
         self.outputs: list[str] = []
         self._n = 0
@@ -177,7 +178,7 @@ class PackEndToEndTest(unittest.TestCase):
         refs = {s["name"]: s for s in raw["stages"]}
         refs["choose_task_and_base"]["params"]["base_model_dir"] = str(self.hub)
         for name in ("smoke", "train"):
-            refs[name]["params"].update(image=NEMO_RL_IMAGE)
+            refs[name]["params"].update(image=TIERB_IMAGE)
         self.pipeline = self.tmp / "pipeline.yaml"
         self.pipeline.write_text(yaml.safe_dump(raw, sort_keys=False))
 
@@ -306,7 +307,7 @@ class PackEndToEndTest(unittest.TestCase):
         backend_runs = FakeRuntime(state_dir=self.fake).runs
         self.assertEqual([r.argv[r.argv.index("--profile") + 1] for r in backend_runs], ["smoke", "full"])
         for spec in backend_runs:
-            self.assertEqual((spec.image, spec.network), (NEMO_RL_IMAGE, "none"))
+            self.assertEqual((spec.image, spec.network), (TIERB_IMAGE, "none"))
             self.assertTrue(spec.gpu_options)
 
         doc = self.cli("verify", str(root), "--keeper", str(self.kp.socket), expect=EXIT_NOT_PASS)
