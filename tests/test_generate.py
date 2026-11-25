@@ -19,6 +19,7 @@ PKG = Path(gatedtrain_pack_vlm_clevr.__file__).parent
 SCRIPT = PKG / "generate_vllm.py"
 FAKE = Path(__file__).parent / "fakevllm"
 SAMPLER = {"name": "vllm", "temperature": 0.7, "top_p": 1.0, "max_new_tokens": 512}
+GREEDY = {"name": "vllm", "decoding": "greedy", "temperature": 0, "top_p": 1.0, "max_new_tokens": 512}
 QUESTIONS = ["How many cubes?", "Is the sphere red?", "Héllo – how many?"]
 
 
@@ -111,6 +112,44 @@ class GenerateTests(unittest.TestCase):
         [imp] = self.events("import")
         self.assertEqual(imp["env"]["VLLM_CACHE_ROOT"], "/tmp/cache/vllm")
         self.assertEqual(imp["env"]["HF_HOME"], "/tmp/cache/hf")
+
+    def test_greedy_ignores_the_seed_and_turns_prefix_caching_off(self):
+        res = self.run_script(sampler=GREEDY, seeds=(11, 987654))
+        self.assertEqual(res.returncode, 0, res.stderr)
+        [llm] = self.events("llm")
+        self.assertEqual(llm["kwargs"]["enable_prefix_caching"], False)
+        self.assertEqual(llm["kwargs"]["max_num_seqs"], 1)      # one request at a time: no batch-dependent numerics
+        gens = self.events("generate")
+        self.assertEqual(len(gens), 2)                      # one pass per seed, as the keeper's control needs
+        for gen in gens:
+            self.assertEqual(gen["sampling"], {"temperature": 0.0, "top_p": 1.0, "max_tokens": 512, "seed": None})
+        docs = [json.loads(x) for x in (self.out / "predictions.jsonl").read_text(encoding="utf-8").split("\n")[:-1]]
+        self.assertEqual([d["seed"] for d in docs], [11] * 3 + [987654] * 3)   # the lines still name their seeds
+        self.assertEqual(len(read_predictions(self.out, 3, [11, 987654])), 6)
+
+    def test_sampled_engine_args_are_unchanged(self):
+        self.run_script()
+        [llm] = self.events("llm")
+        self.assertNotIn("enable_prefix_caching", llm["kwargs"])
+        self.assertNotIn("max_num_seqs", llm["kwargs"])
+
+    def test_bad_greedy_sampler_refused(self):
+        bad = [dict(GREEDY, temperature=0.3), dict(GREEDY, top_p=0.9), dict(GREEDY, decoding="beam"),
+               dict(SAMPLER, decoding="greedy"), dict(GREEDY, temperature=True),
+               {k: v for k, v in GREEDY.items() if k != "temperature"}]
+        for sampler in bad:
+            with self.subTest(sampler=sampler):
+                self.record.unlink(missing_ok=True)
+                res = self.run_script(sampler=sampler)
+                self.assertEqual(res.returncode, 2)
+                self.assertIn("sampler", res.stderr)
+                self.assertEqual(os.listdir(self.out), [])
+                self.assertEqual(self.events("import"), [])
+
+    def test_temperature_zero_without_the_switch_is_refused(self):
+        res = self.run_script(sampler=dict(SAMPLER, temperature=0))
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("greedy", res.stderr)
 
     def test_bad_sampler_refused(self):
         bad = [dict(SAMPLER, top_k=20), dict(SAMPLER, enable_thinking=False),

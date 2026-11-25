@@ -44,10 +44,15 @@ ARCHITECTURE = "Qwen3_5ForConditionalGeneration"
 REQUIRED_BASE = ("config.json", "tokenizer.json", "tokenizer_config.json", "preprocessor_config.json",
                  "video_preprocessor_config.json", "chat_template.jinja")
 MODEL_SUFFIXES = (".safetensors", ".json", ".txt", ".jinja")    # the keeper's MODEL_FILE_SUFFIXES
-# gatedtrain's registration refuses a temperature of 0 (registration.py "sampler.temperature"), so the deployment
-# samples at 0.7 over four seeds, as the text pack; the recipe's own gate was greedy with one seed.
-SAMPLER = {"name": "vllm", "temperature": 0.7, "top_p": 1.0, "max_new_tokens": 512}
-EVAL_SEEDS = [11, 12, 13, 14]
+# The deployment decodes greedily by default, as the recipe's own gate did (temperature 0, one evaluation seed, one
+# sample per item): gatedtrain registers it as `decoding: greedy` and the keeper checks it with a control seed (AN-26).
+# Sampled decoding (temperature 0.7 over four seeds, as the text pack) stays available with `decoding: sampled`.
+GREEDY_SAMPLER = {"name": "vllm", "decoding": "greedy", "temperature": 0, "top_p": 1.0, "max_new_tokens": 512}
+GREEDY_SEEDS = [11]
+SAMPLED_SAMPLER = {"name": "vllm", "temperature": 0.7, "top_p": 1.0, "max_new_tokens": 512}
+SAMPLED_SEEDS = [11, 12, 13, 14]
+DECODINGS = {"greedy": (GREEDY_SAMPLER, GREEDY_SEEDS), "sampled": (SAMPLED_SAMPLER, SAMPLED_SEEDS)}
+SAMPLER, EVAL_SEEDS = GREEDY_SAMPLER, GREEDY_SEEDS
 # run_vlm_nemo.py PROFILES (steps); `train_job` passes no --max-steps, so these are the only steps a job runs.
 PROFILE_STEPS = {"smoke": 5, "full": 60}
 TRAINING_SEED = 7100                    # the recipe's seed
@@ -343,8 +348,17 @@ class ChooseTaskAndBase:
     inputs = {"profile": SCHEMA_PROFILE}
     outputs = {"deployment": SCHEMA_DEPLOYMENT, "base": SCHEMA_MODEL_REF}
     needs: frozenset[str] = frozenset()
-    params = frozenset({"base_model_dir"})
+    params = frozenset({"base_model_dir", "decoding"})
     trains = False
+
+    @staticmethod
+    def _decoding(ctx: StageContext) -> tuple[dict, list]:
+        d = ctx.params.get("decoding", "greedy")
+        if d not in DECODINGS:
+            raise _refuse("VLM-2", "params.decoding", f"decoding {d!r} is not one of {', '.join(DECODINGS)}",
+                          "set decoding to greedy (the default) or sampled")
+        sampler, seeds = DECODINGS[d]
+        return dict(sampler), list(seeds)
 
     def _source(self, ctx: StageContext) -> tuple[Path, list[str]]:
         d = ctx.params.get("base_model_dir")
@@ -372,17 +386,19 @@ class ChooseTaskAndBase:
     def plan(self, ctx: StageContext) -> Proposal:
         n = ctx.project.read_artifact(ctx.inputs["profile"]).get("n")
         src, names = self._source(ctx)
+        sampler, seeds = self._decoding(ctx)
         return Proposal(self.name, f"task: CLEVR answers ({n} training rows); base model: {ARCHITECTURE} from {src}, "
                         f"its {len(names)} files copied for the keeper",
-                        {"task": "clevr", "sampler": dict(SAMPLER), "eval_seeds": list(EVAL_SEEDS)},
+                        {"task": "clevr", "sampler": sampler, "eval_seeds": seeds},
                         {"gpu_hours": 0.0})
 
     def run(self, ctx: StageContext, decision: dict) -> dict[str, ArtifactRef]:
         src, names = self._source(ctx)
+        sampler, seeds = self._decoding(ctx)
         out = _backend(ctx, self.name).new_output_dir(BASE_DIR)
         files = [{"path": str(out / n), "sha256": _copy(src / n, out / n)} for n in names]
         stage = ctx.stage or self.name
-        deployment = {**_meta(SCHEMA_DEPLOYMENT), "sampler": dict(SAMPLER), "eval_seeds": list(EVAL_SEEDS)}
+        deployment = {**_meta(SCHEMA_DEPLOYMENT), "sampler": sampler, "eval_seeds": seeds}
         base = {**_meta(SCHEMA_MODEL_REF), "generator": GENERATOR, "label": "base", "files": files}
         return {"deployment": ctx.project.write_artifact(stage, "deployment", deployment, SCHEMA_DEPLOYMENT),
                 "base": ctx.project.write_artifact(stage, "base", base, SCHEMA_MODEL_REF)}
@@ -391,7 +407,8 @@ class ChooseTaskAndBase:
         fix = "rerun clevr_choose_task_and_base"
         base = ctx.project.read_artifact(outputs["base"])
         dep = ctx.project.read_artifact(outputs["deployment"])
-        if dep.get("sampler") != SAMPLER or dep.get("eval_seeds") != EVAL_SEEDS:
+        sampler, seeds = self._decoding(ctx)
+        if dep.get("sampler") != sampler or dep.get("eval_seeds") != seeds:
             return [Problem("VLM-2", "deployment", "the deployment is not the pack's sampler and seeds", fix)]
         if base.get("generator") != GENERATOR or base.get("label") != "base":
             return [Problem("VLM-2", "base", f"the base reference is not a {GENERATOR} base model", fix)]

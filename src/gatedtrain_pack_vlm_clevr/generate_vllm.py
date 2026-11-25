@@ -34,7 +34,7 @@ PROMPT = ("Think step-by-step to solve the following problem, and answer in the 
           "step-by-step thought process </think> <answer> final answer </answer>\nNote that your final answer must "
           "only contain a single numerical output (e.g. 2, 12, 45) for numerical solutions, and only the strings "
           "\"yes\" or \"no\" for yes/no type questions.\n\nLet's think step-by-step: \n{}\n")
-SAMPLER_KEYS = frozenset({"name", "temperature", "top_p", "max_new_tokens"})
+SAMPLER_KEYS = frozenset({"name", "temperature", "top_p", "max_new_tokens", "decoding"})
 PREDICTIONS = "predictions.jsonl"
 MAX_MODEL_LEN = 1024
 MAX_PIXELS = 400_000      # the prompt budget (about 400 image tokens), as the pack's stages and converter
@@ -73,6 +73,13 @@ def _check_sampler(doc) -> tuple[dict, list]:
     for key in ("temperature", "top_p"):
         if not _number(sampler.get(key)):
             raise _Refusal(f"the sampler's {key} must be a number")
+    if "decoding" in sampler and sampler["decoding"] != "greedy":
+        raise _Refusal("the sampler's decoding must be 'greedy' when present")
+    if sampler.get("decoding") == "greedy":
+        if sampler["temperature"] != 0 or sampler["top_p"] != 1:
+            raise _Refusal("a greedy sampler has temperature 0 and top_p 1")
+    elif sampler["temperature"] == 0:
+        raise _Refusal("temperature 0 is greedy decoding and needs the sampler's decoding to be 'greedy'")
     max_new = sampler.get("max_new_tokens")
     if isinstance(max_new, bool) or not isinstance(max_new, int) or max_new < 1:
         raise _Refusal("the sampler's max_new_tokens must be a positive integer")
@@ -149,12 +156,20 @@ def main(argv: list[str] | None = None) -> int:
                                                  {"type": "text", "text": PROMPT.format(question)}]}]
         prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         requests.append({"prompt": prompt, "multi_modal_data": {"image": Image.open(io.BytesIO(raw)).convert("RGB")}})
+    greedy = sampler.get("decoding") == "greedy"
+    # Greedy decoding ignores the seed. The keeper runs it under a control seed too and compares the predictions
+    # (gatedtrain AN-26), so a later pass must not differ from the first. Prefix caching would let it reuse the first
+    # pass's key-value blocks, so it is off; and one request at a time (max_num_seqs 1) keeps the numerics from
+    # depending on which requests share a batch: with the default batching, 54 to 56 % of the items of the 0.8B base
+    # model differed between two passes of one process (30 % for the trained model), a long chain of thought turning a
+    # last-bit difference into another text. vLLM's batch-invariant mode does not support Qwen3.5's attention (GDN_ATTN).
+    extra = {"enable_prefix_caching": False, "max_num_seqs": 1} if greedy else {}
     llm = LLM(model=args.model, dtype="bfloat16", seed=0, max_model_len=MAX_MODEL_LEN, gpu_memory_utilization=0.85,
-              limit_mm_per_prompt={"image": 1}, mm_processor_cache_gb=0)
+              limit_mm_per_prompt={"image": 1}, mm_processor_cache_gb=0, **extra)
     lines = []
     for seed in seeds:
-        params = SamplingParams(temperature=sampler["temperature"], top_p=sampler["top_p"],
-                                max_tokens=sampler["max_new_tokens"], seed=seed)
+        params = SamplingParams(temperature=float(sampler["temperature"]), top_p=float(sampler["top_p"]),
+                                max_tokens=sampler["max_new_tokens"], **({} if greedy else {"seed": seed}))
         outputs = llm.generate(requests, params)
         if len(outputs) != len(items):
             raise RuntimeError(f"vLLM returned {len(outputs)} outputs for {len(items)} requests")

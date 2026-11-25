@@ -117,7 +117,7 @@ class EvalRequirementsTest(unittest.TestCase):
 
     def test_pack_dependencies_unchanged(self):
         self.assertEqual(tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["dependencies"],
-                         ["gatedtrain>=0.5,<0.6"])
+                         ["gatedtrain>=0.6,<0.7"])
 
 
 class ReadmeTest(unittest.TestCase):
@@ -142,7 +142,7 @@ class ReadmeTest(unittest.TestCase):
 
     def test_readme_states_the_pinned_facts(self):
         flat = " ".join(self.text.split())
-        for needle in ("2fc06364715b967f1860aea9cf38778875588b17", "temperature of 0", "64 MiB", "NEMO_RL_IMAGES"):
+        for needle in ("2fc06364715b967f1860aea9cf38778875588b17", "decoding: greedy", "max_num_seqs=1", "64 MiB", "NEMO_RL_IMAGES"):
             self.assertIn(needle, flat)
 
     def test_no_host_paths(self):

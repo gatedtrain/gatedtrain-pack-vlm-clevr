@@ -1,6 +1,6 @@
 # gatedtrain-pack-vlm-clevr
 
-A scenario pack for [gatedtrain](https://github.com/gatedtrain/gatedtrain) (`gatedtrain>=0.5,<0.6`) for
+A scenario pack for [gatedtrain](https://github.com/gatedtrain/gatedtrain) (`gatedtrain>=0.6,<0.7`) for
 vision-language models: it teaches a small VLM to answer counting and yes/no questions about pictures, and lets
 gatedtrain decide, by a rule fixed before training, whether the trained model really is better.
 
@@ -13,19 +13,41 @@ It is a prototype: the models it trains are not promotable.
 
 ## A tested run
 
-One run on one 24 GB GPU, with 1,834 CLEVR rows (one row per distinct image; 1,435 for training, 399 sealed for the
-test), the 60-step recipe and the derived trainer image below:
+One run on one 24 GB GPU with greedy decoding (the default), 2,086 CLEVR rows (one row per distinct image; 1,687 for
+training, 399 sealed for the test), the 60-step recipe and the derived trainer image below:
 
 | | Score on the sealed questions |
 |---|---|
-| Base (Qwen3.5-0.8B) | 0.425 |
-| Trained (60 GRPO steps) | 0.567 |
-| Gate | **PASS**: +0.142, 95.25 % interval [0.0896, 0.1924], power 0.97 |
+| Base (Qwen3.5-0.8B) | 0.4135 |
+| Trained (60 GRPO steps) | 0.6241 |
+| Gate | **PASS**: +0.2105, 97.68 % interval [0.1328, 0.2882], power 0.75 |
 
-About 0.5 GPU hours in all (smoke 6 minutes, training 21 minutes, keeper evaluation 4 minutes); `gatedtrain verify
---keeper` accepted the report. Scores are at temperature 0.7 over four seeds, so they are not comparable with the
-recipe's published greedy gate. Your numbers will differ with other data, seeds and hardware. The CPU tests drive the
-whole pipeline with fake containers.
+About 0.9 GPU hours in all (smoke 7 minutes, training 32 minutes, keeper evaluation 17 minutes: greedy decoding runs
+one request at a time, see "Decoding"); `gatedtrain verify --keeper` accepted the report. The gate's test level was
+0.0116 because the same sealed set had been used once before (an earlier attempt that the keeper refused for
+non-deterministic decoding, below, and that spent alpha). Greedy decoding with one seed is the decoding of the recipe's
+published gate (0.404 -> 0.730), but the data and the split differ, so the numbers are close in kind, not a
+replication. The earlier run of version 0.1.0 (temperature 0.7 over four seeds, other data: 0.425 -> 0.567) is not
+comparable with either. Your numbers will differ with other data, seeds and hardware. The CPU tests drive the whole
+pipeline with fake containers.
+
+## Decoding
+
+By default the pack registers **greedy decoding**: `decoding: greedy`, temperature 0, top_p 1.0, at most 512 new tokens,
+one evaluation seed (11), one sample per item. It needs gatedtrain 0.6 or later: the keeper checks greedy decoding by
+generating every sealed item once more under a seed the registration does not name and refuses the attempt if the
+predictions differ (AN-26; the refused attempt costs its alpha).
+
+**Determinism requirement.** vLLM's default batching is not deterministic for Qwen3.5-0.8B with a 512-token chain of
+thought: on 399 items, 54 to 56 % of the base model's answers and 30 % of the trained model's differed between two
+greedy passes (a repeat with the same seed in another process differed as much), and vLLM's batch-invariant mode does
+not support Qwen3.5's attention. The pack's generator therefore runs greedy decoding **one request at a time**
+(`max_num_seqs=1`) with prefix caching off, which gave 0 of 399 differing items for both models in the same probe; it
+costs about 7 minutes per arm for 399 items. A change to the generator, the vLLM version or the GPU needs the same probe
+again (two passes with different seeds on items outside the sealed set) before the keeper is used.
+
+For the earlier mode set `decoding: sampled` in the `params` of `choose_task_and_base` (temperature 0.7, top_p 1.0,
+four seeds 11-14); the keeper needs no determinism check for it.
 
 ## How it works
 
@@ -38,9 +60,6 @@ user, holds the sealed rows and runs the evaluation. Stages of the pipeline (`pi
 Pack stages: `clevr_profile_data`, `clevr_choose_task_and_base`, `clevr_build_train_set`, `clevr_write_recipe`,
 `clevr_smoke`, `clevr_train`. The scorer `vqa_answer` takes the last `<answer>` block (else the last integer, number
 word up to twenty, or yes/no of the response) and compares it with the label.
-
-The deployment sampler is temperature 0.7, top_p 1.0, at most 512 new tokens, four seeds (11-14): gatedtrain's
-registration refuses a temperature of 0, so the recipe's greedy gate cannot be registered here.
 
 ## Data
 
@@ -100,11 +119,11 @@ the recipe's published gate, so scores are not comparable with its `RESULT.md`.
 ## Tests
 
 ```
-pip install -e ".[convert]" "gatedtrain==0.5.0"
+pip install -e ".[convert]" "gatedtrain==0.6.0"
 python -m unittest discover -s tests -t tests
 ```
 
-`GATEDTRAIN_SRC` (a gatedtrain v0.5.0 source checkout) enables the CPU end to end, which runs the stage machine, a
+`GATEDTRAIN_SRC` (a gatedtrain v0.6.0 source checkout) enables the CPU end to end, which runs the stage machine, a
 same-user keeper and fake containers; no GPU, Docker or model is used.
 
 ## License
