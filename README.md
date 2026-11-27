@@ -1,6 +1,6 @@
 # gatedtrain-pack-vlm-clevr
 
-A scenario pack for [gatedtrain](https://github.com/gatedtrain/gatedtrain) (`gatedtrain>=0.7.1,<0.8`) for
+A scenario pack for [gatedtrain](https://github.com/gatedtrain/gatedtrain) (`gatedtrain>=0.7.2,<0.8`) for
 vision-language models: it teaches a small VLM to answer counting and yes/no questions about pictures, and lets
 gatedtrain decide, by a rule fixed before training, whether the trained model really is better.
 
@@ -140,8 +140,14 @@ fit.
   and removed in 0.4.0 (see "Changes in 0.3.0").
 - The base model directory: `Qwen/Qwen3.5-0.8B` at commit `2fc06364715b967f1860aea9cf38778875588b17`, with its
   processor files (`preprocessor_config.json`, `video_preprocessor_config.json`) and `chat_template.jinja`.
-- The keeper's eval venv (`gatedtrain setup host --eval-requirements <this package>/eval-requirements.txt`, CPython
-  3.12, vLLM 0.31.0): the same packages and versions as the text pack's lock (whether vLLM 0.31.0 loads Qwen3.5-0.8B with images is for the first GPU probe to show; none is recorded yet). Start the keeper with `--eval-python PATH` when the venv is
+- The keeper's eval venv, from `<this package>/eval-requirements.txt` (CPython 3.12, vLLM 0.31.0). A same-user keeper
+  (the default) needs no sudo for it: `gatedtrain setup eval-tree --requirements <this package>/eval-requirements.txt
+  --python-version 3.12 > gatedtrain-eval-tree.sh`, read and run the script as yourself (it needs `uv`; it changes only
+  files under its root, `gatedtrain-keeper-eval` beside the keeper's state directory), then start the keeper with the
+  `--eval-tree` and `--eval-python` options it prints and with `--inference-image`; the tree is yours, so it is not
+  sealed from your account, the keeper checks it at start only (restart it after a change), and a separate-user keeper
+  refuses it. A separate-user keeper needs the root-owned tree of `gatedtrain setup host --eval-requirements <this
+  package>/eval-requirements.txt` (one sudo). The packages and versions as the text pack's lock (whether vLLM 0.31.0 loads Qwen3.5-0.8B with images is for the first GPU probe to show; none is recorded yet). Start the keeper with `--eval-python PATH` when the venv is
   not the one `gatedtrain setup host` builds (the value is part of the keeper's signed environment record); the variable
   `GATEDTRAIN_PACK_VLM_CLEVR_EVAL_PYTHON` still works as a deprecated workaround, prints a notice, and is removed in
   pack 0.4.0.
@@ -182,16 +188,26 @@ the recipe's published gate, so scores are not comparable with its `RESULT.md`.
 ## Tests
 
 ```
-pip install -e ".[convert]" "gatedtrain==0.7.1"
+pip install -e ".[convert]" "gatedtrain==0.7.2"
 python -m unittest discover -s tests -t tests
 ```
 
-`GATEDTRAIN_SRC` (a gatedtrain v0.7.1 source checkout) enables the CPU end to end, which runs the stage machine, a
+`GATEDTRAIN_SRC` (a gatedtrain v0.7.2 source checkout) enables the CPU end to end, which runs the stage machine, a
 same-user keeper and fake containers; no GPU, Docker or model is used.
 
 ## Changes
 
-### 0.3.1 (Unreleased)
+### 0.3.2 (Unreleased)
+
+Needs gatedtrain 0.7.2 (`gatedtrain>=0.7.2,<0.8`), which adds `gatedtrain setup eval-tree`. No code of the pack changed.
+
+- **No sudo for the keeper's eval tree in a same-user keeper.** `gatedtrain setup eval-tree` prints a user-level script
+  that builds it from this pack's `eval-requirements.txt` (see "What you need"); before, only the root script of
+  `gatedtrain setup host` built it. A separate-user keeper still needs that script.
+- Not changed, and not solved here: the NeMo RL trainer image (it is host specific and there is no registry to pull it
+  from), the rootless derivative, and `memlock`.
+
+### 0.3.1
 
 Needs gatedtrain 0.7.1 (`gatedtrain>=0.7.1,<0.8`): it uses the host file's `[packs]` tables, `owner_gpu_mem_limit_gb` and the
 keeper's `--eval-python`.
