@@ -209,7 +209,7 @@ Needs gatedtrain 0.7.2 (`gatedtrain>=0.7.2,<0.8`), which adds `gatedtrain setup 
 
 ### 0.3.1
 
-Needs gatedtrain 0.7.1 (`gatedtrain>=0.7.1,<0.8`): it uses the host file's `[packs]` tables, `owner_gpu_mem_limit_gb` and the
+Needs gatedtrain 0.7.1 (`gatedtrain>=0.7.1,<0.8`): it uses the host file's `[packs]` tables, the function `launch.owner_gpu_mem_limit_gb` (it reads the host file's key `gpu_mem_limit_gb`) and the
 keeper's `--eval-python`.
 
 

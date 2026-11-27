@@ -145,6 +145,11 @@ class ReadmeTest(unittest.TestCase):
     def setUp(self):
         self.text = (REPO / "README.md").read_text()
 
+    def test_readme_names_the_host_file_key_not_the_function_as_a_key(self):
+        """`owner_gpu_mem_limit_gb` is a function of gatedtrain; the host file's key is `gpu_mem_limit_gb`."""
+        flat = " ".join(self.text.split())
+        self.assertIn("the function `launch.owner_gpu_mem_limit_gb` (it reads the host file's key `gpu_mem_limit_gb`)", flat)
+
     def test_readme_eval_tree_has_a_same_user_path_without_sudo(self):
         """0.3.2: a same-user keeper builds the eval tree with `gatedtrain setup eval-tree` (no sudo); the root script of
         `setup host` stays for a separate-user keeper, and the README says which is for which mode."""
