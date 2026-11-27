@@ -117,7 +117,7 @@ class EvalRequirementsTest(unittest.TestCase):
 
     def test_pack_dependencies_unchanged(self):
         self.assertEqual(tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["dependencies"],
-                         ["gatedtrain>=0.7.1,<0.8"])
+                         ["gatedtrain>=0.7.2,<0.8"])
 
     def test_pack_version_is_one_value(self):
         """`__version__` and the project version are the same release (the README and the tag name it)."""
@@ -144,6 +144,16 @@ class EvalRequirementsTest(unittest.TestCase):
 class ReadmeTest(unittest.TestCase):
     def setUp(self):
         self.text = (REPO / "README.md").read_text()
+
+    def test_readme_eval_tree_has_a_same_user_path_without_sudo(self):
+        """0.3.2: a same-user keeper builds the eval tree with `gatedtrain setup eval-tree` (no sudo); the root script of
+        `setup host` stays for a separate-user keeper, and the README says which is for which mode."""
+        flat = " ".join(self.text.split())
+        for needle in ("gatedtrain setup eval-tree --requirements", "--python-version 3.12", "needs no sudo for it",
+                       "a separate-user keeper refuses it", "A separate-user keeper needs the root-owned tree",
+                       "gatedtrain>=0.7.2,<0.8", "Changes"):
+            self.assertIn(needle, flat)
+        self.assertIn("### 0.3.2", self.text)
 
     def test_readme_names_entry_points_and_params(self):
         project = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]
